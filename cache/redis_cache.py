@@ -95,7 +95,7 @@ class RedisCache(ICachedStorage):
             return None
         
 
-    async def set(
+    async def save_value(
             self,
             key: str,
             value: CachedResponse,
