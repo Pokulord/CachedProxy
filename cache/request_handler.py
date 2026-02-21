@@ -25,6 +25,7 @@ class ProxyRequestHandler:
         headers = dict(request.headers)
         body = await request.read() if request.can_read_body else None
 
+        headers.pop('Accept-Encoding', None)
         # We caching only GET-requests
 
         if method.upper() != "GET":
@@ -53,7 +54,8 @@ class ProxyRequestHandler:
                     headers=resp_headers,
                     body=resp_body
                 )
-                await self.cache.get(cache_key, cached, ttl=3600)
+                await self.cache.save_value(cache_key, cached, ttl=3600)
+                logger.info("Saving value to Redis.....")
 
             return self._build_response(status, resp_headers, resp_body, cache_hit=False)
 
@@ -98,12 +100,30 @@ class ProxyRequestHandler:
             cache_hit: bool
     ) -> web.Response:
         """Building HTTP response"""
-        headers = dict(headers)
-        headers[self.CACHE_HIT_HEADER] = self.CACHE_HIT_VALUE if cache_hit else self.CACHE_MISS_VALUE
+                # Создаем копию заголовков
+        response_headers = {}
+        
+        # Копируем только безопасные заголовки
+        safe_headers = [
+            'content-type', 'date', 'server', 'access-control-allow-origin',
+            'strict-transport-security', 'x-content-type-options',
+            'x-frame-options', 'x-xss-protection', 'cache-control',
+            'age', 'cf-cache-status', 'cf-ray', 'vary'
+        ]
+        
+        for key, value in headers.items():
+            if key.lower() in safe_headers:
+                response_headers[key] = value
+        
+        # Добавляем наш заголовок кэша
+        response_headers[self.CACHE_HIT_HEADER] = self.CACHE_HIT_VALUE if cache_hit else self.CACHE_MISS_VALUE
+        
+        # Явно указываем Content-Length вместо chunked encoding
+        response_headers['Content-Length'] = str(len(body))
 
         return web.Response(
             status=status_code,
-            headers=headers,
+            headers=response_headers,
             body=body
         )
     
@@ -113,26 +133,38 @@ class ProxyRequestHandler:
             cache_hit: bool
     ) -> web.Response:
         """Building response from the cached data"""
-        headers = dict(cached.headers)
-        headers[self.CACHE_HIT_HEADER] = self.CACHE_HIT_VALUE if cache_hit else self.CACHE_MISS_VALUE
+        response_headers = {}
+        
+        # Копируем только безопасные заголовки из кэша
+        safe_headers = [
+            'content-type', 'date', 'server', 'access-control-allow-origin',
+            'strict-transport-security', 'x-content-type-options',
+            'x-frame-options', 'x-xss-protection', 'cache-control',
+            'age', 'cf-cache-status', 'cf-ray', 'vary'
+        ]
+        
+        for key, value in cached.headers.items():
+            if key.lower() in safe_headers:
+                response_headers[key] = value
+        
+        # Добавляем наш заголовок кэша
+        response_headers[self.CACHE_HIT_HEADER] = self.CACHE_HIT_VALUE if cache_hit else self.CACHE_MISS_VALUE
+        
+        # Явно указываем Content-Length
+        response_headers['Content-Length'] = str(len(cached.body))
 
         return web.Response(
             status=cached.status_code,
-            headers=headers,
+            headers=response_headers,
             body=cached.body
         )  
+      
       
     @staticmethod
     def _should_cache_response(status: int, headers: dict) -> bool:
         """Defines should server cache response"""
-        if status != 200:
-            return False
-        
-        cache_control = headers.get("Cache-Control", "").lower()
-        if "no-store" in cache_control or "private" in cache_control:
-            return False
-        
-        if "Set-Cookie" in headers:
-            return False
-        
-        return True
+
+        # Пока воткну "затычку", которая кэширует только успешные ответы (200 код)
+        if status == 200:
+            return True
+        return False

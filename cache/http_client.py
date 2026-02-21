@@ -34,15 +34,16 @@ class HTTPClient:
             raise RuntimeError("No active HTTP client session" \
             "Please start one using async context manager")
         
-        full_url = f"{self.origin_url}/{path.lstrip("/")}"
+        full_url = urljoin(self.origin_url, path.lstrip("/"))
 
         safe_headers = self._sanitize_headers(headers or {})
+        safe_headers["Accept-Encoding"] = "gzip, deflate"
 
         try: 
             logger.info(f"Forwarding {method} to {full_url}")
 
             async with self._session.request(
-                method=method.upper,
+                method=method.upper(),
                 url=full_url,
                 headers=safe_headers,
                 data=body,

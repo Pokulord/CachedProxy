@@ -106,6 +106,10 @@ class RedisCache(ICachedStorage):
         
         try:
             prefixed_key = self._get_prefix_with_key(key)
+            logger.info(f"=== SAVING TO REDIS ===")
+            logger.info(f"Original key: {key}")
+            logger.info(f"Prefixed key: {prefixed_key}")
+            logger.info(f"TTL: {ttl}")
             # Serialize to JSON
             serialized = json.dumps(value.to_dict())
 
